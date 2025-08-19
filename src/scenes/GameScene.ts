@@ -7,6 +7,9 @@ import { COLORS, GAME_CONFIG, GAMEPLAY, LAYOUT, SCENES } from '@/utils/Constants
 import { GAME_EVENTS, GameState, IInputState } from '@/types/GameTypes';
 import { eventBus } from '@/utils/EventBus';
 import { AssetLoader } from '@/core/AssetLoader';
+import { LevelManager, LevelConfig, LevelStats } from '@/systems/LevelManager';
+import { NoiseSourceManager } from '@/systems/NoiseSourceManager';
+import { PowerUpManager } from '@/systems/PowerUpManager';
 
 /**
  * Main game scene containing all gameplay elements
@@ -17,11 +20,19 @@ export class GameScene extends Phaser.Scene {
   private television!: Television;
   private noiseMeter!: NoiseMeter;
 
+  // Game systems
+  private levelManager!: LevelManager;
+  private noiseSourceManager!: NoiseSourceManager;
+  private powerUpManager!: PowerUpManager;
+  private currentLevel!: LevelConfig;
+
   // UI elements
   private timerText!: Phaser.GameObjects.Text;
   private pauseButton!: Button;
   private noiseCancelButton!: Button;
   private instructionText!: Phaser.GameObjects.Text;
+  private scoreText!: Phaser.GameObjects.Text;
+  private powerUpUI!: Phaser.GameObjects.Container;
 
   // Game state
   private gameState: GameState = GameState.PLAYING;
@@ -32,6 +43,18 @@ export class GameScene extends Phaser.Scene {
     spaceDown: false,
     touchActive: false
   };
+
+  // Game statistics
+  private gameStats: LevelStats = {
+    timeRemaining: 0,
+    maxNoiseLevel: 0,
+    noiseCancelUsage: 0,
+    powerUpsUsed: 0,
+    perfectSleep: true,
+    stealthMode: true
+  };
+  private noiseCancelStartTime: number = 0;
+  private currentScore: number = 0;
 
   // Timers
   private gameTimerEvent: Phaser.Time.TimerEvent | null = null;
@@ -45,8 +68,11 @@ export class GameScene extends Phaser.Scene {
    */
   init(): void {
     this.gameState = GameState.PLAYING;
-    this.gameTimer = GAMEPLAY.GAME_DURATION;
+    this.levelManager = LevelManager.getInstance();
+    this.currentLevel = this.levelManager.getCurrentLevelConfig() || this.levelManager.getLevelConfig(1)!;
+    this.gameTimer = this.currentLevel.duration;
     this.resetInputState();
+    this.resetGameStats();
   }
 
   /**
@@ -63,10 +89,12 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.createBackground();
     this.createEntities();
+    this.createGameSystems();
     this.createUI();
     this.setupInputHandlers();
     this.setupEventListeners();
     this.startGameTimer();
+    this.startPowerUpSpawning();
   }
 
   /**
@@ -175,25 +203,56 @@ export class GameScene extends Phaser.Scene {
     // Create bear
     this.bear = new Bear(this, LAYOUT.BEAR_POSITION.x, LAYOUT.BEAR_POSITION.y);
 
-    // Create television
+    // Create television with level-specific configuration
     this.television = new Television(this, LAYOUT.TV_POSITION.x, LAYOUT.TV_POSITION.y);
+    this.television.configure(this.currentLevel.tvConfig);
 
     // Create noise meter
     this.noiseMeter = new NoiseMeter(this, LAYOUT.WAKE_METER_POSITION.x, LAYOUT.WAKE_METER_POSITION.y);
   }
 
   /**
+   * Create game systems
+   */
+  private createGameSystems(): void {
+    // Initialize noise source manager
+    this.noiseSourceManager = new NoiseSourceManager(this);
+    this.noiseSourceManager.createNoiseSources(this.currentLevel.noiseSources);
+
+    // Initialize power-up manager
+    this.powerUpManager = new PowerUpManager(this);
+    this.powerUpManager.setAvailablePowerUps(this.currentLevel.availablePowerUps);
+  }
+
+  /**
    * Create UI elements
    */
   private createUI(): void {
+    // Level info display
+    this.add.text(20, 20, `Level ${this.currentLevel.id}: ${this.currentLevel.name}`, {
+      fontSize: '18px',
+      color: COLORS.DEEP_PURPLE,
+      fontFamily: 'Arial, sans-serif',
+      fontStyle: 'bold'
+    });
+
     // Timer display
-    this.timerText = this.add.text(LAYOUT.TIMER_POSITION.x, LAYOUT.TIMER_POSITION.y, '01:00', {
+    this.timerText = this.add.text(LAYOUT.TIMER_POSITION.x, LAYOUT.TIMER_POSITION.y, this.formatTime(this.gameTimer), {
       fontSize: '32px',
       color: COLORS.DEEP_PURPLE,
       fontFamily: 'Arial, sans-serif',
       fontStyle: 'bold'
     });
     this.timerText.setOrigin(0.5, 0.5);
+
+    // Score display
+    this.scoreText = this.add.text(GAME_CONFIG.WIDTH - 20, 20, 'Score: 0', {
+      fontSize: '18px',
+      color: COLORS.DEEP_PURPLE,
+      fontFamily: 'Arial, sans-serif',
+      fontStyle: 'bold'
+    });
+    this.scoreText.setOrigin(1, 0);
 
     // Pause button
     this.pauseButton = new Button(this, {
@@ -206,15 +265,29 @@ export class GameScene extends Phaser.Scene {
     });
     this.pauseButton.on('pointerup', this.togglePause, this);
 
+    // Back to level select button
+    const backButton = new Button(this, {
+      x: 50,
+      y: LAYOUT.PAUSE_BUTTON_POSITION.y,
+      width: 80,
+      height: 40,
+      text: '← Levels',
+      backgroundColor: COLORS.WARM_GRAY,
+      style: {
+        fontSize: '12px'
+      }
+    });
+    backButton.on('pointerup', () => this.scene.start('LevelSelectScene'));
+
     // Noise canceling button - made clearer with text
     this.noiseCancelButton = new Button(this, {
       x: LAYOUT.NOISE_BUTTON_POSITION.x,
       y: LAYOUT.NOISE_BUTTON_POSITION.y,
       width: LAYOUT.NOISE_BUTTON_SIZE.width,
       height: LAYOUT.NOISE_BUTTON_SIZE.height,
-      text: 'MUTE TV\n🔇\nHold',
+      text: 'MUTE NOISE\n🔇\nHold',
       style: {
-        fontSize: '16px',
+        fontSize: '14px',
         fontStyle: 'bold'
       },
       backgroundColor: COLORS.SAGE_GREEN,
@@ -229,7 +302,7 @@ export class GameScene extends Phaser.Scene {
 
     // Add instruction text
     this.instructionText = this.add.text(GAME_CONFIG.WIDTH / 2, 90, 
-      'Keep the bear sleeping! Press SPACEBAR or hold MUTE button when TV turns on', {
+      `Keep the bear sleeping for ${Math.floor(this.currentLevel.duration / 1000)} seconds!`, {
       fontSize: '16px',
       color: COLORS.DEEP_PURPLE,
       fontFamily: 'Arial, sans-serif',
@@ -237,6 +310,60 @@ export class GameScene extends Phaser.Scene {
       wordWrap: { width: GAME_CONFIG.WIDTH - 40 }
     });
     this.instructionText.setOrigin(0.5, 0.5);
+
+    // Power-up UI container
+    this.createPowerUpUI();
+  }
+
+  /**
+   * Create power-up UI display
+   */
+  private createPowerUpUI(): void {
+    this.powerUpUI = this.add.container(20, 100);
+    // Power-ups will be added dynamically
+  }
+
+
+  /**
+   * Format time for display
+   */
+  private formatTime(milliseconds: number): string {
+    const minutes = Math.floor(milliseconds / 60000);
+    const seconds = Math.floor((milliseconds % 60000) / 1000);
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  }
+
+  /**
+   * Reset game statistics
+   */
+  private resetGameStats(): void {
+    this.gameStats = {
+      timeRemaining: this.currentLevel.duration,
+      maxNoiseLevel: 0,
+      noiseCancelUsage: 0,
+      powerUpsUsed: 0,
+      perfectSleep: true,
+      stealthMode: true
+    };
+    this.currentScore = 0;
+    this.noiseCancelStartTime = 0;
+  }
+
+  /**
+   * Start power-up spawning system
+   */
+  private startPowerUpSpawning(): void {
+    if (this.currentLevel.availablePowerUps.length === 0) return;
+    
+    const spawnInterval = 20000 + Math.random() * 15000; // 20-35 seconds
+    this.time.addEvent({
+      delay: spawnInterval,
+      callback: () => {
+        this.powerUpManager.spawnRandomPowerUp();
+        this.startPowerUpSpawning(); // Reschedule
+      },
+      callbackScope: this
+    });
   }
 
   /**
@@ -263,8 +390,18 @@ export class GameScene extends Phaser.Scene {
     eventBus.on(GAME_EVENTS.TV_TURN_ON, this.onTVTurnOn.bind(this));
     eventBus.on(GAME_EVENTS.TV_TURN_OFF, this.onTVTurnOff.bind(this));
 
+    // Noise source events
+    eventBus.on(GAME_EVENTS.NOISE_SOURCE_START, this.onNoiseSourceStart.bind(this));
+    eventBus.on(GAME_EVENTS.NOISE_SOURCE_STOP, this.onNoiseSourceStop.bind(this));
+
     // Bear events
     eventBus.on(GAME_EVENTS.BEAR_WAKE_UP, this.onBearWakeUp.bind(this));
+    eventBus.on(GAME_EVENTS.BEAR_STATE_CHANGE, this.onBearStateChange.bind(this));
+
+    // Power-up events
+    eventBus.on(GAME_EVENTS.POWERUP_COLLECTED, this.onPowerUpCollected.bind(this));
+    eventBus.on(GAME_EVENTS.POWERUP_ACTIVATED, this.onPowerUpActivated.bind(this));
+    eventBus.on(GAME_EVENTS.POWERUP_EXPIRED, this.onPowerUpExpired.bind(this));
 
     // Meter events
     eventBus.on(GAME_EVENTS.METER_UPDATE, this.onMeterUpdate.bind(this));
@@ -302,11 +439,11 @@ export class GameScene extends Phaser.Scene {
    * Update timer display
    */
   private updateTimerDisplay(): void {
-    const minutes = Math.floor(this.gameTimer / 60000);
-    const seconds = Math.floor((this.gameTimer % 60000) / 1000);
-    const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    
+    const timeString = this.formatTime(this.gameTimer);
     this.timerText.setText(timeString);
+
+    // Update score based on time remaining
+    this.updateScore();
 
     // Change color based on remaining time
     if (this.gameTimer <= 10000) { // 10 seconds
@@ -317,6 +454,27 @@ export class GameScene extends Phaser.Scene {
     } else if (this.gameTimer <= 30000) { // 30 seconds
       this.timerText.setColor(COLORS.WARNING_ORANGE);
     }
+  }
+
+  /**
+   * Update score display
+   */
+  private updateScore(): void {
+    // Base score from time remaining
+    let score = Math.floor(this.gameTimer / 1000) * 10;
+    
+    // Bonus for perfect sleep (never drowsy)
+    if (this.gameStats.perfectSleep) {
+      score += 500;
+    }
+    
+    // Bonus for stealth mode (minimal noise canceling)
+    if (this.gameStats.stealthMode && this.gameStats.noiseCancelUsage < this.currentLevel.duration * 0.2) {
+      score += 300;
+    }
+    
+    this.currentScore = score;
+    this.scoreText.setText(`Score: ${this.currentScore}`);
   }
 
   /**
@@ -356,6 +514,7 @@ export class GameScene extends Phaser.Scene {
   private startNoiseCancel(): void {
     if (this.gameState !== GameState.PLAYING) return;
     this.inputState.mouseDown = true;
+    this.noiseCancelStartTime = this.time.now;
     this.updateNoiseCancelState();
   }
 
@@ -363,7 +522,11 @@ export class GameScene extends Phaser.Scene {
    * Stop noise canceling
    */
   private stopNoiseCancel(): void {
+    if (this.inputState.mouseDown && this.noiseCancelStartTime > 0) {
+      this.gameStats.noiseCancelUsage += this.time.now - this.noiseCancelStartTime;
+    }
     this.inputState.mouseDown = false;
+    this.noiseCancelStartTime = 0;
     this.updateNoiseCancelState();
   }
 
@@ -379,13 +542,18 @@ export class GameScene extends Phaser.Scene {
       if (shouldBeActive) {
         this.noiseMeter.activateNoiseCanceling();
         this.noiseCancelButton.setText('MUTING!\n🔇\nActive');
-        this.instructionText.setText('Good! You\'re muting the TV noise!');
+        this.instructionText.setText('Good! You\'re reducing noise!');
         this.instructionText.setColor(COLORS.SUCCESS_GREEN);
         eventBus.emit(GAME_EVENTS.NOISE_CANCEL_START);
+        
+        // Track stealth mode (too much noise canceling breaks stealth)
+        if (this.gameStats.noiseCancelUsage > this.currentLevel.duration * 0.3) {
+          this.gameStats.stealthMode = false;
+        }
       } else {
         this.noiseMeter.deactivateNoiseCanceling();
-        this.noiseCancelButton.setText('MUTE TV\n🔇\nHold');
-        this.instructionText.setText('Keep the bear sleeping! Press SPACEBAR or hold MUTE button when TV turns on');
+        this.noiseCancelButton.setText('MUTE NOISE\n🔇\nHold');
+        this.instructionText.setText(`Keep the bear sleeping for ${Math.floor(this.gameTimer / 1000)} more seconds!`);
         this.instructionText.setColor(COLORS.DEEP_PURPLE);
         eventBus.emit(GAME_EVENTS.NOISE_CANCEL_STOP);
       }
@@ -449,15 +617,157 @@ export class GameScene extends Phaser.Scene {
    * Handle TV turn off event
    */
   private onTVTurnOff(): void {
-    this.instructionText.setText('TV turned off! Well done! Get ready for the next one...');
+    this.instructionText.setText('TV turned off! Well done! Stay alert...');
     this.instructionText.setColor(COLORS.SUCCESS_GREEN);
     
     // Reset instruction text after a short delay
     this.time.delayedCall(2000, () => {
       if (this.gameState === GameState.PLAYING) {
-        this.instructionText.setText('Keep the bear sleeping! Press SPACEBAR or hold MUTE button when TV turns on');
+        this.instructionText.setText(`Keep the bear sleeping for ${Math.floor(this.gameTimer / 1000)} more seconds!`);
         this.instructionText.setColor(COLORS.DEEP_PURPLE);
       }
+    });
+  }
+
+  /**
+   * Handle noise source start event
+   */
+  private onNoiseSourceStart(data: any): void {
+    if (!this.inputState.isNoiseCancelActive && !this.powerUpManager.hasTemporaryImmunity()) {
+      let noiseAmount = (data.intensity * GAMEPLAY.TIMER_UPDATE_INTERVAL) / 1000;
+      
+      // Apply power-up modifiers
+      noiseAmount *= this.powerUpManager.getNoiseReductionMultiplier();
+      noiseAmount *= this.currentLevel.modifiers.noiseIncreaseMultiplier;
+      
+      this.bear.addNoise(noiseAmount);
+      this.noiseMeter.addNoise(noiseAmount);
+      
+      // Update max noise level stat
+      this.gameStats.maxNoiseLevel = Math.max(this.gameStats.maxNoiseLevel, this.noiseMeter.getCurrentLevel());
+    }
+    
+    // Show warning about new noise source
+    this.instructionText.setText(`${data.type} noise detected! Use noise canceling!`);
+    this.instructionText.setColor(COLORS.WARNING_ORANGE);
+  }
+
+  /**
+   * Handle noise source stop event
+   */
+  private onNoiseSourceStop(_data: any): void {
+    // Optional: Show feedback about noise source stopping
+  }
+
+  /**
+   * Handle bear state change event
+   */
+  private onBearStateChange(data: any): void {
+    if (data.newState !== 'sleeping') {
+      this.gameStats.perfectSleep = false;
+    }
+    
+    // Update instruction based on bear state
+    switch (data.newState) {
+      case 'drowsy':
+        this.instructionText.setText('Bear is getting drowsy! Quick, reduce the noise!');
+        this.instructionText.setColor(COLORS.WARNING_ORANGE);
+        break;
+      case 'awake':
+        this.instructionText.setText('Bear is awake! Game Over!');
+        this.instructionText.setColor(COLORS.DANGER_RED);
+        break;
+      case 'sleeping':
+        if (this.gameState === GameState.PLAYING) {
+          this.instructionText.setText(`Keep the bear sleeping for ${Math.floor(this.gameTimer / 1000)} more seconds!`);
+          this.instructionText.setColor(COLORS.SUCCESS_GREEN);
+        }
+        break;
+    }
+  }
+
+  /**
+   * Handle power-up collected event
+   */
+  private onPowerUpCollected(data: any): void {
+    this.gameStats.powerUpsUsed++;
+    
+    // Show collection feedback
+    const collectText = this.add.text(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT / 2, 
+      `${data.config.name} Activated!`, {
+      fontSize: '20px',
+      color: COLORS.SUCCESS_GREEN,
+      fontFamily: 'Arial, sans-serif',
+      fontStyle: 'bold'
+    });
+    collectText.setOrigin(0.5, 0.5);
+    
+    // Fade out the text
+    this.tweens.add({
+      targets: collectText,
+      alpha: 0,
+      y: collectText.y - 50,
+      duration: 2000,
+      onComplete: () => collectText.destroy()
+    });
+  }
+
+  /**
+   * Handle power-up activated event
+   */
+  private onPowerUpActivated(_data: any): void {
+    // Update power-up UI to show active power-ups
+    this.updatePowerUpUI();
+  }
+
+  /**
+   * Handle power-up expired event
+   */
+  private onPowerUpExpired(_data: any): void {
+    // Update power-up UI
+    this.updatePowerUpUI();
+    
+    // Show expiration feedback
+    const expiredText = this.add.text(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT / 2 + 50, 
+      'Power-up expired', {
+      fontSize: '16px',
+      color: COLORS.WARNING_ORANGE,
+      fontFamily: 'Arial, sans-serif'
+    });
+    expiredText.setOrigin(0.5, 0.5);
+    
+    this.tweens.add({
+      targets: expiredText,
+      alpha: 0,
+      duration: 1500,
+      onComplete: () => expiredText.destroy()
+    });
+  }
+
+  /**
+   * Update power-up UI display
+   */
+  private updatePowerUpUI(): void {
+    // Clear existing power-up UI
+    this.powerUpUI.removeAll(true);
+    
+    const activePowerUps = this.powerUpManager.getActivePowerUps();
+    let yOffset = 0;
+    
+    activePowerUps.forEach((powerUp, _type) => {
+      const powerUpBg = this.add.rectangle(0, yOffset, 180, 30, 
+        parseInt(powerUp.config.color.replace('#', '0x')), 0.8);
+      powerUpBg.setOrigin(0, 0);
+      
+      const powerUpText = this.add.text(5, yOffset + 5, 
+        `${powerUp.config.name}: ${Math.ceil(powerUp.getRemainingDuration() / 1000)}s`, {
+        fontSize: '12px',
+        color: COLORS.CREAM,
+        fontFamily: 'Arial, sans-serif'
+      });
+      
+      this.powerUpUI.add([powerUpBg, powerUpText]);
+      yOffset += 35;
     });
   }
 
@@ -493,7 +803,20 @@ export class GameScene extends Phaser.Scene {
    */
   private victory(): void {
     this.gameState = GameState.VICTORY;
-    this.showEndGameModal('Victory!', 'You kept the bear sleeping for 60 seconds!', COLORS.SUCCESS_GREEN);
+    
+    // Finalize stats
+    this.gameStats.timeRemaining = this.gameTimer;
+    
+    // Complete the level
+    this.levelManager.completeLevel(this.currentLevel.id, this.currentScore, this.gameStats);
+    
+    // Create victory message with stats
+    let victoryMessage = `Level ${this.currentLevel.id} Complete!\nScore: ${this.currentScore}`;
+    if (this.gameStats.perfectSleep) victoryMessage += '\n🛌 Perfect Sleep Bonus!';
+    if (this.gameStats.stealthMode) victoryMessage += '\n🥷 Stealth Mode Bonus!';
+    if (this.gameStats.powerUpsUsed > 0) victoryMessage += `\n💊 Power-ups used: ${this.gameStats.powerUpsUsed}`;
+    
+    this.showEndGameModal('Victory!', victoryMessage, COLORS.SUCCESS_GREEN);
   }
 
   /**
@@ -501,7 +824,14 @@ export class GameScene extends Phaser.Scene {
    */
   private gameOver(): void {
     this.gameState = GameState.GAME_OVER;
-    this.showEndGameModal('Game Over', 'The bear woke up!', COLORS.DANGER_RED);
+    
+    // Finalize stats (no completion)
+    this.gameStats.timeRemaining = this.gameTimer;
+    
+    let gameOverMessage = `Level ${this.currentLevel.id} Failed!\nTime survived: ${this.formatTime(this.currentLevel.duration - this.gameTimer)}`;
+    if (this.gameStats.powerUpsUsed > 0) gameOverMessage += `\nPower-ups used: ${this.gameStats.powerUpsUsed}`;
+    
+    this.showEndGameModal('Game Over', gameOverMessage, COLORS.DANGER_RED);
   }
 
   /**
@@ -512,15 +842,15 @@ export class GameScene extends Phaser.Scene {
     const modalBg = this.add.rectangle(
       GAME_CONFIG.WIDTH / 2,
       GAME_CONFIG.HEIGHT / 2,
-      400,
-      300,
+      450,
+      350,
       parseInt(COLORS.CREAM.replace('#', '0x'))
     );
     modalBg.setStrokeStyle(3, parseInt(color.replace('#', '0x')));
     modalBg.setAlpha(0.95);
 
     // Title text
-    const titleText = this.add.text(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT / 2 - 60, title, {
+    const titleText = this.add.text(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT / 2 - 80, title, {
       fontSize: '32px',
       color: color,
       fontFamily: 'Arial, sans-serif',
@@ -529,46 +859,105 @@ export class GameScene extends Phaser.Scene {
     titleText.setOrigin(0.5, 0.5);
 
     // Message text
-    const messageText = this.add.text(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT / 2 - 10, message, {
-      fontSize: '18px',
+    const messageText = this.add.text(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT / 2 - 20, message, {
+      fontSize: '16px',
       color: COLORS.CHARCOAL,
       fontFamily: 'Arial, sans-serif',
-      align: 'center'
+      align: 'center',
+      lineSpacing: 8
     });
     messageText.setOrigin(0.5, 0.5);
 
-    // Restart button
-    const restartButton = new Button(this, {
-      x: GAME_CONFIG.WIDTH / 2 - 80,
-      y: GAME_CONFIG.HEIGHT / 2 + 60,
-      width: 120,
-      height: 40,
-      text: 'Play Again',
-      backgroundColor: COLORS.SAGE_GREEN
-    });
-    restartButton.on('pointerup', () => this.scene.restart());
+    // Create buttons based on game state
+    const buttons: Button[] = [];
 
-    // Menu button
-    const menuButton = new Button(this, {
-      x: GAME_CONFIG.WIDTH / 2 + 80,
-      y: GAME_CONFIG.HEIGHT / 2 + 60,
-      width: 120,
-      height: 40,
-      text: 'Menu',
-      backgroundColor: COLORS.DUSTY_ROSE
-    });
-    menuButton.on('pointerup', this.returnToMenu, this);
+    if (this.gameState === GameState.VICTORY) {
+      // Next Level button (if available)
+      const nextLevelConfig = this.levelManager.getLevelConfig(this.currentLevel.id + 1);
+      if (nextLevelConfig && this.levelManager.isLevelUnlocked(this.currentLevel.id + 1)) {
+        const nextLevelButton = new Button(this, {
+          x: GAME_CONFIG.WIDTH / 2 - 120,
+          y: GAME_CONFIG.HEIGHT / 2 + 70,
+          width: 100,
+          height: 40,
+          text: 'Next Level',
+          backgroundColor: COLORS.SUCCESS_GREEN
+        });
+        nextLevelButton.on('pointerup', () => {
+          this.levelManager.setCurrentLevel(this.currentLevel.id + 1);
+          this.scene.restart();
+        });
+        buttons.push(nextLevelButton);
+      }
+      
+      // Restart button
+      const restartButton = new Button(this, {
+        x: GAME_CONFIG.WIDTH / 2,
+        y: GAME_CONFIG.HEIGHT / 2 + 70,
+        width: 100,
+        height: 40,
+        text: 'Replay',
+        backgroundColor: COLORS.SAGE_GREEN
+      });
+      restartButton.on('pointerup', () => this.scene.restart());
+      buttons.push(restartButton);
+      
+      // Level Select button
+      const levelSelectButton = new Button(this, {
+        x: GAME_CONFIG.WIDTH / 2 + 120,
+        y: GAME_CONFIG.HEIGHT / 2 + 70,
+        width: 100,
+        height: 40,
+        text: 'Levels',
+        backgroundColor: COLORS.INFO_BLUE
+      });
+      levelSelectButton.on('pointerup', () => this.scene.start('LevelSelectScene'));
+      buttons.push(levelSelectButton);
+    } else {
+      // Game Over - Restart and Level Select
+      const restartButton = new Button(this, {
+        x: GAME_CONFIG.WIDTH / 2 - 80,
+        y: GAME_CONFIG.HEIGHT / 2 + 70,
+        width: 120,
+        height: 40,
+        text: 'Try Again',
+        backgroundColor: COLORS.WARNING_ORANGE
+      });
+      restartButton.on('pointerup', () => this.scene.restart());
+      buttons.push(restartButton);
 
-    // Create modal container
-    const modal = this.add.container(0, 0, [modalBg, titleText, messageText, restartButton, menuButton]);
+      const levelSelectButton = new Button(this, {
+        x: GAME_CONFIG.WIDTH / 2 + 80,
+        y: GAME_CONFIG.HEIGHT / 2 + 70,
+        width: 120,
+        height: 40,
+        text: 'Levels',
+        backgroundColor: COLORS.DUSTY_ROSE
+      });
+      levelSelectButton.on('pointerup', () => this.scene.start('LevelSelectScene'));
+      buttons.push(levelSelectButton);
+    }
+
+    // Create modal container (buttons are already added to scene, so just container for text elements)
+    const modal = this.add.container(0, 0, [modalBg, titleText, messageText]);
     
     // Animate modal appearance
     modal.setAlpha(0);
+    buttons.forEach(button => button.setAlpha(0));
+    
     this.tweens.add({
       targets: modal,
       alpha: 1,
       duration: 300,
       ease: 'Power2'
+    });
+    
+    this.tweens.add({
+      targets: buttons,
+      alpha: 1,
+      duration: 300,
+      ease: 'Power2',
+      delay: 150
     });
   }
 
@@ -583,16 +972,46 @@ export class GameScene extends Phaser.Scene {
     this.television.update(time, delta);
     this.noiseMeter.update(time, delta);
 
-    // Handle noise canceling
+    // Update game systems
+    this.noiseSourceManager.update(time, delta);
+    this.powerUpManager.update(time, delta);
+
+    // Update game statistics
+    this.gameStats.timeRemaining = this.gameTimer;
+    this.gameStats.maxNoiseLevel = Math.max(this.gameStats.maxNoiseLevel, this.noiseMeter.getCurrentLevel());
+
+    // Update power-up UI periodically
+    if (time % 1000 < delta) { // Roughly once per second
+      this.updatePowerUpUI();
+    }
+
+    // Handle noise canceling with power-up modifiers
     if (this.inputState.isNoiseCancelActive) {
-      const reductionAmount = (GAMEPLAY.NOISE_DECREASE_RATE * delta) / 1000;
+      let reductionAmount = (GAMEPLAY.NOISE_DECREASE_RATE * delta) / 1000;
+      reductionAmount *= this.powerUpManager.getNoiseCancellationMultiplier();
+      reductionAmount *= this.currentLevel.modifiers.noiseDecreaseMultiplier;
+      
       this.bear.reduceNoise(reductionAmount);
       this.noiseMeter.reduceNoise(reductionAmount);
     }
 
     // Handle TV noise when active
-    if (this.television.isOn() && !this.inputState.isNoiseCancelActive) {
-      const noiseAmount = (GAMEPLAY.NOISE_INCREASE_RATE * delta) / 1000;
+    if (this.television.isOn() && !this.inputState.isNoiseCancelActive && !this.powerUpManager.hasTemporaryImmunity()) {
+      let noiseAmount = (GAMEPLAY.NOISE_INCREASE_RATE * delta) / 1000;
+      noiseAmount *= this.powerUpManager.getNoiseReductionMultiplier();
+      noiseAmount *= this.currentLevel.modifiers.noiseIncreaseMultiplier;
+      
+      this.bear.addNoise(noiseAmount);
+      this.noiseMeter.addNoise(noiseAmount);
+    }
+
+    // Handle additional noise sources
+    const totalNoiseSourceLevel = this.noiseSourceManager.getTotalNoiseLevel();
+    if (totalNoiseSourceLevel > 0 && !this.inputState.isNoiseCancelActive && !this.powerUpManager.hasTemporaryImmunity()) {
+      let noiseAmount = (totalNoiseSourceLevel * delta) / 1000;
+      noiseAmount *= this.powerUpManager.getNoiseReductionMultiplier();
+      noiseAmount *= this.currentLevel.modifiers.noiseIncreaseMultiplier;
+      
       this.bear.addNoise(noiseAmount);
       this.noiseMeter.addNoise(noiseAmount);
     }

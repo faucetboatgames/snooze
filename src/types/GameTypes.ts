@@ -108,14 +108,36 @@ export const GAME_EVENTS = {
   TV_NOISE_START: 'tv:noise_start',
   TV_NOISE_STOP: 'tv:noise_stop',
   
+  // Noise Source Events
+  NOISE_SOURCE_START: 'noise_source:start',
+  NOISE_SOURCE_STOP: 'noise_source:stop',
+  NOISE_SOURCE_WARNING: 'noise_source:warning',
+  
   // Noise Canceling Events
   NOISE_CANCEL_START: 'noise_cancel:start',
   NOISE_CANCEL_STOP: 'noise_cancel:stop',
   
+  // Level System Events
+  LEVEL_CHANGED: 'level:changed',
+  LEVEL_COMPLETED: 'level:completed',
+  LEVEL_UNLOCKED: 'level:unlocked',
+  PROGRESS_RESET: 'progress:reset',
+  
+  // Power-up Events
+  POWERUP_SPAWNED: 'powerup:spawned',
+  POWERUP_COLLECTED: 'powerup:collected',
+  POWERUP_ACTIVATED: 'powerup:activated',
+  POWERUP_EXPIRED: 'powerup:expired',
+  
+  // Scoring Events
+  SCORE_UPDATE: 'score:update',
+  ACHIEVEMENT_UNLOCKED: 'achievement:unlocked',
+  
   // UI Events
   BUTTON_CLICK: 'ui:button_click',
   METER_UPDATE: 'ui:meter_update',
-  TIMER_UPDATE: 'ui:timer_update'
+  TIMER_UPDATE: 'ui:timer_update',
+  LEVEL_SELECT: 'ui:level_select'
 } as const;
 
 // Input Types

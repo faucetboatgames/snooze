@@ -1,6 +1,7 @@
 import 'phaser';
 import { MenuScene } from './scenes/MenuScene';
 import { GameScene } from './scenes/GameScene';
+import { LevelSelectScene } from './scenes/LevelSelectScene';
 import { GAME_CONFIG } from './utils/Constants';
 
 /**
@@ -19,7 +20,7 @@ const gameConfig: Phaser.Types.Core.GameConfig = {
       debug: false
     }
   },
-  scene: [MenuScene, GameScene],
+  scene: [MenuScene, LevelSelectScene, GameScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,

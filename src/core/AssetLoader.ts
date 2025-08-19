@@ -179,17 +179,23 @@ export class AssetLoader {
       const centerX = x + frameWidth / 2;
       const centerY = frameHeight / 2;
       
+      // Animation breathing effect - slight size variation
+      const breathScale = 1 + (Math.sin((i / frameCount) * Math.PI * 2) * 0.05);
+      const bodyWidth = frameWidth * 0.7 * breathScale;
+      const bodyHeight = frameHeight * 0.6 * breathScale;
+      
       // Bear body (brown oval)
       graphics.fillStyle(0x8B6F47);
-      graphics.fillEllipse(centerX, centerY + 10, frameWidth * 0.7, frameHeight * 0.6);
+      graphics.fillEllipse(centerX, centerY + 10, bodyWidth, bodyHeight);
       
       // Bear head (lighter brown circle)
       graphics.fillStyle(0xA0845A);
-      graphics.fillCircle(centerX, centerY - 15, frameWidth * 0.35);
+      const headRadius = frameWidth * 0.35 * breathScale;
+      graphics.fillCircle(centerX, centerY - 15, headRadius);
       
       // Bear belly (cream colored)
       graphics.fillStyle(0xD4C4A8);
-      graphics.fillEllipse(centerX, centerY + 5, frameWidth * 0.4, frameHeight * 0.3);
+      graphics.fillEllipse(centerX, centerY + 5, frameWidth * 0.4 * breathScale, frameHeight * 0.3 * breathScale);
       
       // Ears
       graphics.fillStyle(0x8B6F47);
@@ -204,18 +210,21 @@ export class AssetLoader {
       // Eyes (different for each state)
       graphics.fillStyle(0x000000);
       if (key.includes('sleeping')) {
-        // Closed eyes (lines)
+        // Closed eyes (lines) - slight movement for breathing
         graphics.lineStyle(2, 0x000000);
-        graphics.lineBetween(centerX - 8, centerY - 20, centerX - 4, centerY - 20);
-        graphics.lineBetween(centerX + 4, centerY - 20, centerX + 8, centerY - 20);
+        const eyeOffset = Math.sin((i / frameCount) * Math.PI * 2) * 0.5;
+        graphics.lineBetween(centerX - 8, centerY - 20 + eyeOffset, centerX - 4, centerY - 20 + eyeOffset);
+        graphics.lineBetween(centerX + 4, centerY - 20 + eyeOffset, centerX + 8, centerY - 20 + eyeOffset);
       } else if (key.includes('drowsy')) {
-        // Half-open eyes
-        graphics.fillEllipse(centerX - 6, centerY - 20, 4, 2);
-        graphics.fillEllipse(centerX + 6, centerY - 20, 4, 2);
+        // Half-open eyes - blinking animation
+        const blinkAmount = (i % 2) * 2;
+        graphics.fillEllipse(centerX - 6, centerY - 20, 4, 2 + blinkAmount);
+        graphics.fillEllipse(centerX + 6, centerY - 20, 4, 2 + blinkAmount);
       } else {
-        // Wide open eyes
-        graphics.fillCircle(centerX - 6, centerY - 20, 3);
-        graphics.fillCircle(centerX + 6, centerY - 20, 3);
+        // Wide open eyes - alert animation
+        const alertSize = 3 + (i % 2);
+        graphics.fillCircle(centerX - 6, centerY - 20, alertSize);
+        graphics.fillCircle(centerX + 6, centerY - 20, alertSize);
         // Surprised expression
         graphics.fillStyle(0xFFFFFF);
         graphics.fillCircle(centerX - 6, centerY - 21, 1);
@@ -229,8 +238,9 @@ export class AssetLoader {
       // Mouth (different for each state)
       graphics.lineStyle(1, 0x000000);
       if (key.includes('awake')) {
-        // Surprised mouth (O shape)
-        graphics.strokeCircle(centerX, centerY - 10, 3);
+        // Surprised mouth (O shape) - gasping animation
+        const mouthSize = 3 + (i % 2);
+        graphics.strokeCircle(centerX, centerY - 10, mouthSize);
       } else {
         // Small smile
         graphics.strokeCircle(centerX, centerY - 12, 4);

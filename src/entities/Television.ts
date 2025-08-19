@@ -256,6 +256,30 @@ export class Television extends BaseEntity {
   }
 
   /**
+   * Configure TV with level-specific settings
+   */
+  public configure(config: any): void {
+    // Update the gameplay constants temporarily for this TV instance
+    this.tvConfig = {
+      initialDelayMin: config.initialDelayMin || GAMEPLAY.TV_INITIAL_DELAY_MIN,
+      initialDelayMax: config.initialDelayMax || GAMEPLAY.TV_INITIAL_DELAY_MAX,
+      subsequentDelayMin: config.subsequentDelayMin || GAMEPLAY.TV_SUBSEQUENT_DELAY_MIN,
+      subsequentDelayMax: config.subsequentDelayMax || GAMEPLAY.TV_SUBSEQUENT_DELAY_MAX,
+      activeDurationMin: config.activeDurationMin || GAMEPLAY.TV_ACTIVE_DURATION_MIN,
+      activeDurationMax: config.activeDurationMax || GAMEPLAY.TV_ACTIVE_DURATION_MAX
+    };
+  }
+
+  private tvConfig = {
+    initialDelayMin: GAMEPLAY.TV_INITIAL_DELAY_MIN,
+    initialDelayMax: GAMEPLAY.TV_INITIAL_DELAY_MAX,
+    subsequentDelayMin: GAMEPLAY.TV_SUBSEQUENT_DELAY_MIN,
+    subsequentDelayMax: GAMEPLAY.TV_SUBSEQUENT_DELAY_MAX,
+    activeDurationMin: GAMEPLAY.TV_ACTIVE_DURATION_MIN,
+    activeDurationMax: GAMEPLAY.TV_ACTIVE_DURATION_MAX
+  };
+
+  /**
    * Schedule the next TV activation
    */
   private scheduleNextActivation(): void {
@@ -267,13 +291,13 @@ export class Television extends BaseEntity {
       this.warningTimer.destroy();
     }
 
-    // Calculate random delay
+    // Calculate random delay using configured values
     const minDelay = this.tvState.turnOnDelay === 0 ? 
-      GAMEPLAY.TV_INITIAL_DELAY_MIN : 
-      GAMEPLAY.TV_SUBSEQUENT_DELAY_MIN;
+      this.tvConfig.initialDelayMin : 
+      this.tvConfig.subsequentDelayMin;
     const maxDelay = this.tvState.turnOnDelay === 0 ? 
-      GAMEPLAY.TV_INITIAL_DELAY_MAX : 
-      GAMEPLAY.TV_SUBSEQUENT_DELAY_MAX;
+      this.tvConfig.initialDelayMax : 
+      this.tvConfig.subsequentDelayMax;
     
     const delay = Phaser.Math.Between(minDelay, maxDelay);
     this.tvState.turnOnDelay = delay;
@@ -299,10 +323,10 @@ export class Television extends BaseEntity {
       this.turnOffTimer.destroy();
     }
 
-    // Calculate random active duration
+    // Calculate random active duration using configured values
     const duration = Phaser.Math.Between(
-      GAMEPLAY.TV_ACTIVE_DURATION_MIN,
-      GAMEPLAY.TV_ACTIVE_DURATION_MAX
+      this.tvConfig.activeDurationMin,
+      this.tvConfig.activeDurationMax
     );
     this.tvState.activeDuration = duration;
 

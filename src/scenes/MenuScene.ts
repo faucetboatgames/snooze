@@ -142,25 +142,42 @@ export class MenuScene extends Phaser.Scene {
    * Create menu buttons
    */
   private createButtons(): void {
-    // Start Game button
+    // Quick Start button (Level 1)
     this.startButton = new Button(this, {
       x: GAME_CONFIG.WIDTH / 2,
-      y: 320,
+      y: 300,
       width: 200,
-      height: 60,
-      text: 'Start Game',
+      height: 50,
+      text: 'Quick Start',
       style: {
-        fontSize: '20px',
+        fontSize: '18px',
         fontStyle: 'bold'
       }
     });
 
     this.startButton.on('pointerup', this.startGame, this);
 
+    // Level Select button
+    const levelSelectButton = new Button(this, {
+      x: GAME_CONFIG.WIDTH / 2,
+      y: 360,
+      width: 200,
+      height: 50,
+      text: 'Select Level',
+      backgroundColor: COLORS.SAGE_GREEN,
+      hoverColor: COLORS.SUCCESS_GREEN,
+      style: {
+        fontSize: '18px',
+        fontStyle: 'bold'
+      }
+    });
+
+    levelSelectButton.on('pointerup', this.showLevelSelect, this);
+
     // Instructions button
     this.instructionsButton = new Button(this, {
       x: GAME_CONFIG.WIDTH / 2,
-      y: 400,
+      y: 420,
       width: 200,
       height: 50,
       text: 'Instructions',
@@ -183,14 +200,21 @@ export class MenuScene extends Phaser.Scene {
   }
 
   /**
-   * Start the game
+   * Start the game (Level 1)
    */
   private startGame(): void {
     // Play button click sound (placeholder)
     // this.sound.play(ASSETS.AUDIO.BUTTON_CLICK);
 
-    // Transition to game scene
+    // Transition to game scene with Level 1
     this.scene.start(SCENES.GAME);
+  }
+
+  /**
+   * Show level select screen
+   */
+  private showLevelSelect(): void {
+    this.scene.start('LevelSelectScene');
   }
 
   /**

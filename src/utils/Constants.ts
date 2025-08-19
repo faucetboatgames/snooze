@@ -124,5 +124,6 @@ export const ASSETS = {
 // Scene Keys
 export const SCENES = {
   MENU: 'MenuScene',
+  LEVEL_SELECT: 'LevelSelectScene',
   GAME: 'GameScene'
 } as const;
