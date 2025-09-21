@@ -1,31 +1,64 @@
 import 'phaser';
 import { IButtonConfig } from '@/types/GameTypes';
 import { COLORS } from '@/utils/Constants';
+import { ResponsiveUI } from '@/ui/ResponsiveUI';
 
 /**
  * Reusable button component with hover and click effects
  */
 export class Button extends Phaser.GameObjects.Container {
   private config: IButtonConfig;
+  private originalConfig: IButtonConfig;
   private background!: Phaser.GameObjects.Rectangle;
   private label!: Phaser.GameObjects.Text;
   private isPressed: boolean = false;
   private isHovered: boolean = false;
+  private responsiveUI: ResponsiveUI;
+  private touchStartTime: number = 0;
+  private minTouchDuration: number = 50; // Minimum touch duration in ms
 
   constructor(scene: Phaser.Scene, config: IButtonConfig) {
-    super(scene, config.x, config.y);
-    
-    this.config = {
+    // Store original config for responsive scaling
+    const originalConfig = { ...config };
+
+    // Get responsive configuration
+    const responsiveUI = ResponsiveUI.getInstance();
+    const responsiveConfig = responsiveUI.getButtonConfig(
+      config.x,
+      config.y,
+      config.width,
+      config.height,
+      config.text,
+      'medium'
+    );
+
+    // Apply responsive dimensions
+    const enhancedConfig = {
       backgroundColor: COLORS.SAGE_GREEN,
       borderColor: COLORS.DEEP_PURPLE,
       hoverColor: COLORS.SUCCESS_GREEN,
       activeColor: COLORS.DUSTY_ROSE,
-      ...config
+      ...config,
+      x: responsiveConfig.position.x,
+      y: responsiveConfig.position.y,
+      width: responsiveConfig.size.width,
+      height: responsiveConfig.size.height,
+      style: {
+        fontSize: `${responsiveConfig.fontSize}px`,
+        ...config.style
+      }
     };
+
+    super(scene, enhancedConfig.x, enhancedConfig.y);
+
+    this.config = enhancedConfig;
+    this.originalConfig = originalConfig;
+    this.responsiveUI = responsiveUI;
 
     this.createButton();
     this.setupInteractivity();
-    
+    this.setupResponsiveHandling();
+
     scene.add.existing(this);
   }
 
@@ -92,20 +125,67 @@ export class Button extends Phaser.GameObjects.Container {
   }
 
   /**
-   * Setup button interactivity
+   * Setup button interactivity with mobile-friendly enhancements
    */
   private setupInteractivity(): void {
     this.setSize(this.config.width, this.config.height);
     this.setInteractive();
 
-    // Hover effects
-    this.on('pointerover', this.onHoverStart, this);
-    this.on('pointerout', this.onHoverEnd, this);
+    // Only use hover effects on devices with hover support (not touch-only)
+    if (this.responsiveUI.hasHoverSupport()) {
+      this.on('pointerover', this.onHoverStart, this);
+      this.on('pointerout', this.onHoverEnd, this);
+    }
 
-    // Click effects
+    // Touch/click effects
     this.on('pointerdown', this.onPointerDown, this);
     this.on('pointerup', this.onPointerUp, this);
     this.on('pointerupoutside', this.onPointerUp, this);
+
+    // Add touch-specific events for better mobile experience
+    this.on('touchstart', this.onTouchStart, this);
+    this.on('touchend', this.onTouchEnd, this);
+    this.on('touchcancel', this.onTouchCancel, this);
+  }
+
+  /**
+   * Setup responsive handling for screen size changes
+   */
+  private setupResponsiveHandling(): void {
+    // Listen for responsive breakpoint changes
+    window.addEventListener('responsive-breakpoint-change', this.handleResponsiveChange.bind(this), { passive: true });
+  }
+
+  /**
+   * Handle responsive breakpoint changes
+   */
+  private handleResponsiveChange(): void {
+    const responsiveConfig = this.responsiveUI.getButtonConfig(
+      this.originalConfig.x,
+      this.originalConfig.y,
+      this.originalConfig.width,
+      this.originalConfig.height,
+      this.config.text,
+      'medium'
+    );
+
+    // Update position and size
+    this.x = responsiveConfig.position.x;
+    this.y = responsiveConfig.position.y;
+
+    // Update button dimensions
+    this.config.width = responsiveConfig.size.width;
+    this.config.height = responsiveConfig.size.height;
+
+    // Update visual elements
+    this.background.width = responsiveConfig.size.width;
+    this.background.height = responsiveConfig.size.height;
+
+    // Update text size
+    this.label.setFontSize(responsiveConfig.fontSize);
+
+    // Update interactive area
+    this.setSize(responsiveConfig.size.width, responsiveConfig.size.height);
   }
 
   /**
@@ -203,9 +283,64 @@ export class Button extends Phaser.GameObjects.Container {
   }
 
   /**
+   * Handle touch start (mobile-specific)
+   */
+  private onTouchStart(): void {
+    this.touchStartTime = Date.now();
+    // Provide immediate visual feedback for touch
+    this.background.setFillStyle(parseInt(this.config.activeColor!.replace('#', '0x')));
+  }
+
+  /**
+   * Handle touch end (mobile-specific)
+   */
+  private onTouchEnd(): void {
+    const touchDuration = Date.now() - this.touchStartTime;
+
+    // Only register as a valid tap if touch duration is within reasonable bounds
+    if (touchDuration >= this.minTouchDuration && touchDuration < 1000) {
+      // Valid tap - visual feedback
+      this.scene.tweens.add({
+        targets: this,
+        scaleX: 1.1,
+        scaleY: 1.1,
+        duration: 100,
+        yoyo: true,
+        ease: 'Power2'
+      });
+    }
+
+    // Reset visual state
+    this.background.setFillStyle(parseInt(this.config.backgroundColor!.replace('#', '0x')));
+  }
+
+  /**
+   * Handle touch cancel (mobile-specific)
+   */
+  private onTouchCancel(): void {
+    // Reset visual state when touch is cancelled
+    this.background.setFillStyle(parseInt(this.config.backgroundColor!.replace('#', '0x')));
+  }
+
+  /**
+   * Update button to responsive size
+   */
+  public updateResponsiveSize(): void {
+    this.handleResponsiveChange();
+  }
+
+  /**
    * Get button configuration
    */
   public getConfig(): IButtonConfig {
     return { ...this.config };
+  }
+
+  /**
+   * Cleanup responsive event listeners
+   */
+  public destroy(fromScene?: boolean): void {
+    window.removeEventListener('responsive-breakpoint-change', this.handleResponsiveChange);
+    super.destroy(fromScene);
   }
 }

@@ -15,10 +15,17 @@
     "docs": "typedoc src/main.ts",
     "deploy": "npm run build && gh-pages -d dist"
   },
-  "keywords": ["game", "phaser", "typescript", "web-game", "vintage"],
+  "keywords": [
+    "game",
+    "phaser",
+    "typescript",
+    "web-game",
+    "vintage"
+  ],
   "author": "Faucet Boat Games",
   "license": "MIT",
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "@types/node": "^20.10.0",
     "@typescript-eslint/eslint-plugin": "^6.13.0",
     "@typescript-eslint/parser": "^6.13.0",
