@@ -196,9 +196,9 @@ export class OrientationManager {
 
   private applyConfiguration(): void {
     // Apply orientation lock if supported
-    if (this.config.lockOrientation && screen.orientation && screen.orientation.lock) {
+    if (this.config.lockOrientation && screen.orientation && 'lock' in screen.orientation) {
       const lockOrientation = this.config.preferredOrientation === 'landscape' ? 'landscape' : 'portrait';
-      screen.orientation.lock(lockOrientation).catch(console.warn);
+      (screen.orientation as any).lock(lockOrientation).catch(console.warn);
     }
 
     // Setup fullscreen button if enabled
@@ -345,22 +345,22 @@ export class OrientationManager {
   }
 
   public async lockOrientation(orientation: OrientationType): Promise<void> {
-    if (!screen.orientation || !screen.orientation.lock) {
+    if (!screen.orientation || !('lock' in screen.orientation)) {
       console.warn('Orientation lock not supported');
       return;
     }
 
     try {
       const lockType = orientation === 'landscape' ? 'landscape' : 'portrait';
-      await screen.orientation.lock(lockType);
+      await (screen.orientation as any).lock(lockType);
     } catch (error) {
       console.warn('Failed to lock orientation:', error);
     }
   }
 
   public unlockOrientation(): void {
-    if (screen.orientation && screen.orientation.unlock) {
-      screen.orientation.unlock();
+    if (screen.orientation && 'unlock' in screen.orientation) {
+      (screen.orientation as any).unlock();
     }
   }
 

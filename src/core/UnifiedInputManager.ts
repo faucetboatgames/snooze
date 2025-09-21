@@ -163,7 +163,7 @@ export class UnifiedInputManager {
 
   // Pointer handlers (mouse/stylus)
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
-    if (!this.enabled || pointer.event.pointerType === 'touch') return;
+    if (!this.enabled || (pointer.event as PointerEvent).pointerType === 'touch') return;
 
     this.inputState.pointer.isDown = true;
     this.inputState.pointer.startTime = this.scene.time.now;
@@ -173,7 +173,7 @@ export class UnifiedInputManager {
   }
 
   private onPointerUp(pointer: Phaser.Input.Pointer): void {
-    if (!this.enabled || pointer.event.pointerType === 'touch') return;
+    if (!this.enabled || (pointer.event as PointerEvent).pointerType === 'touch') return;
 
     // Check for double-click for pause
     const now = Date.now();
@@ -258,7 +258,7 @@ export class UnifiedInputManager {
   }
 
   // Gamepad handlers
-  private onGamepadDown(pad: Phaser.Input.Gamepad.Gamepad, button: Phaser.Input.Gamepad.Button): void {
+  private onGamepadDown(_pad: Phaser.Input.Gamepad.Gamepad, button: Phaser.Input.Gamepad.Button): void {
     if (!this.enabled) return;
 
     // A button or primary action button
@@ -273,7 +273,7 @@ export class UnifiedInputManager {
     }
   }
 
-  private onGamepadUp(pad: Phaser.Input.Gamepad.Gamepad, button: Phaser.Input.Gamepad.Button): void {
+  private onGamepadUp(_pad: Phaser.Input.Gamepad.Gamepad, button: Phaser.Input.Gamepad.Button): void {
     if (!this.enabled) return;
 
     if (button.index === 0) {

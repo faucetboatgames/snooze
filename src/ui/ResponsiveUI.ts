@@ -177,7 +177,7 @@ export class ResponsiveUI {
     baseY: number,
     baseWidth: number,
     baseHeight: number,
-    text: string,
+    _text: string,
     fontSize: 'small' | 'medium' | 'large' = 'medium'
   ): ResponsiveConfig {
     const position = this.scalePosition(baseX, baseY);

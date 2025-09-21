@@ -55,7 +55,6 @@ export class MobilePerformanceManager {
 
   // Timers
   private optimizationTimer?: Phaser.Time.TimerEvent;
-  private isInitialized: boolean = false;
 
   private constructor() {}
 
@@ -68,7 +67,6 @@ export class MobilePerformanceManager {
 
   public initialize(game: Phaser.Game): void {
     this.game = game;
-    this.isInitialized = true;
 
     this.detectDeviceCapabilities();
     this.setupPerformanceMonitoring();
@@ -84,8 +82,9 @@ export class MobilePerformanceManager {
 
     // GPU detection (rough)
     const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-    const renderer = gl ? gl.getParameter(gl.RENDERER) : '';
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl') as WebGLRenderingContext | null;
+    // GPU detection for future use
+    gl && gl.getParameter(gl.RENDERER);
 
     // Battery API
     this.setupBatteryMonitoring();
@@ -162,7 +161,7 @@ export class MobilePerformanceManager {
     }
   }
 
-  private updatePerformanceMetrics(time: number, delta: number): void {
+  private updatePerformanceMetrics(_time: number, _delta: number): void {
     // Calculate FPS
     this.frameCount++;
     const currentTime = performance.now();
@@ -277,7 +276,8 @@ export class MobilePerformanceManager {
       // Disable/enable antialiasing
       const canvas = this.game.canvas;
       if (canvas) {
-        const context = canvas.getContext('webgl', { antialias: this.settings.enableAntialiasing });
+        // Context recreation for antialiasing would require full game restart
+        canvas.getContext('webgl', { antialias: this.settings.enableAntialiasing });
       }
     }
 
@@ -389,6 +389,6 @@ export class MobilePerformanceManager {
       this.game.events.off('prestep', this.updatePerformanceMetrics);
     }
 
-    this.isInitialized = false;
+    // Cleanup complete
   }
 }

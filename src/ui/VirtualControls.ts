@@ -20,9 +20,7 @@ export class VirtualControls extends Phaser.GameObjects.Container {
   private instructionText!: Phaser.GameObjects.Text;
 
   // State
-  private isVisible: boolean = false;
   private actionButtonPressed: boolean = false;
-  private lastActionTime: number = 0;
 
   // Event callbacks
   private onActionStart?: () => void;
@@ -188,7 +186,7 @@ export class VirtualControls extends Phaser.GameObjects.Container {
     if (this.config.autoHide) {
       this.scene.input.keyboard?.on('keydown', this.hideTemporarily.bind(this));
       this.scene.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-        if (pointer.event.pointerType !== 'touch') {
+        if ((pointer.event as PointerEvent).pointerType !== 'touch') {
           this.hideTemporarily();
         }
       });
@@ -223,7 +221,6 @@ export class VirtualControls extends Phaser.GameObjects.Container {
     if (!this.config.enabled) return;
 
     this.actionButtonPressed = true;
-    this.lastActionTime = this.scene.time.now;
 
     // Visual feedback
     const innerCircle = (this.actionButton as any).innerCircle;
@@ -300,7 +297,7 @@ export class VirtualControls extends Phaser.GameObjects.Container {
   public show(): void {
     if (!this.shouldShowControls()) return;
 
-    this.isVisible = true;
+    this.setVisible(true);
     this.setAlpha(1);
 
     this.scene.tweens.add({
@@ -312,13 +309,14 @@ export class VirtualControls extends Phaser.GameObjects.Container {
   }
 
   public hide(): void {
-    this.isVisible = false;
-
     this.scene.tweens.add({
       targets: this,
       alpha: 0,
       duration: 300,
-      ease: 'Power2'
+      ease: 'Power2',
+      onComplete: () => {
+        this.setVisible(false);
+      }
     });
   }
 
